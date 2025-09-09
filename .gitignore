@@ -1,0 +1,36 @@
+# Ignore build directories in all subfolders
+**/build/
+
+# ESP-IDF build system files in all folders
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/Makefile
+**/.output/
+
+# Common ESP-IDF generated files
+**/*.elf
+**/*.bin
+**/*.map
+**/project_description.json
+**/.sdkconfig*
+**/*.log
+
+# Python artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+**/*.pyd
+
+# Virtual environments
+**/env/
+**/venv/
+
+# IDE and OS files
+**/.vscode/
+**/.DS_Store
+
+# Config files
+**/sdkconfig
+**/sdkconfig.old
+**/Kconfig.projbuild
