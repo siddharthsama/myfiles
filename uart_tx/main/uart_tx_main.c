@@ -46,7 +46,7 @@ static int64_t uart_start_time  = 0;
 static int64_t uart_end_time    = 0;
 
 #define BLOCK_SIZE   1024
-#define NUM_BLOCKS   20
+#define NUM_BLOCKS   80
 
 
 #define TX_UART_PORT    UART_NUM_1
@@ -138,6 +138,8 @@ static void wifi_init_sta(void)
 
 void http_task(void *pvParameters)
 {
+
+    // int full_count = 0;
     int http_count = 0;
     esp_http_client_config_t config = {
         .url = "https://gitlab.com/divyesh.vartha/cheap-host/-/raw/main/opus/small_harry.ogg?ref_type=heads&inline=false",
@@ -176,6 +178,10 @@ void http_task(void *pvParameters)
             // Normal streaming to ring buffer
             int written;
             do {
+                   if(rb_is_full(rb)){
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    // full_count++;
+                }
 
                 written = rb_write(rb, (char *)buffer, data_read, portMAX_DELAY);
                 
@@ -190,6 +196,8 @@ void http_task(void *pvParameters)
     http_end_time = esp_timer_get_time();
     ESP_LOGI("HTTP_TASK", "HTTP transfer done in %.2f sec",
              (http_end_time - http_start_time) / 1000000.0);
+
+    // printf("full count was %d\n",full_count);
 
 
     esp_http_client_close(client);
@@ -313,6 +321,8 @@ static void tx_task(void *arg)
     int count = 0;
     int fail_count = 0;
 
+    // int read_count = 0;
+
     bool first_rx = true;
 
 
@@ -343,6 +353,8 @@ static void tx_task(void *arg)
     while (1) {
 
         read = rb_read(rb, (char *)buffer, sizeof(buffer), portMAX_DELAY);
+
+        // read_count++;
 
         if (read > 0) {
             if(first_rx == true || (xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL) )
@@ -385,9 +397,13 @@ static void tx_task(void *arg)
                 ESP_LOGI(TAG, "Sent End Frame");
             }
 
+            // printf("read count was %d\n",read_count);
             //break on receiving success flag
             if(xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL)
+            {
+            ESP_LOGI(TAG,"Received END FLAG");
             break;
+            }
         } 
         else if (read == RB_TIMEOUT) {
             ESP_LOGI("TX_TASK", "RB timeout, waiting...");
@@ -407,7 +423,7 @@ void rx_task(void *arg)
 {
     uint8_t buf[1];
     while (1) {
-        int len = uart_read_bytes(TX_UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(1000));
+        int len = uart_read_bytes(TX_UART_PORT, buf, sizeof(buf), portMAX_DELAY);
         if (len > 0) {
             ESP_LOGI("UART_RX", "Received %d bytes: 0x%02X", len, buf[0]);
             int flag = (buf[0] == 0x07) ? SUCCESS_VAL : FAIL_VAL;
