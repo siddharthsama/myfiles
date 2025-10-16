@@ -251,19 +251,24 @@ static int build_frame(uint8_t msg_type,
     memcpy(p, FRAME_HEADER, FRAME_HEADER_LEN);
     p += FRAME_HEADER_LEN;
 
-    // Frame length (payload length only, 2 bytes LE)
-    uint16_t len = payload_len;
-    *p++ = len & 0xFF;
-    *p++ = (len >> 8) & 0xFF;
-
     // Message type
     *p++ = msg_type;
 
+    // Frame length (payload length only, 2 bytes LE)
+    uint16_t len = payload_len;
+        if(payload_len !=0){
+        *p++ = len & 0xFF;
+        *p++ = (len >> 8) & 0xFF;
+        }
+
+    
+
     // Payload
+    if(payload_len !=0){
     memset(p, 0, payload_len);
     memcpy(p, payload, payload_len);
     p += payload_len;
-
+    }
     // Footer
     memcpy(p, FRAME_FOOTER, FRAME_FOOTER_LEN);
     p += FRAME_FOOTER_LEN;
@@ -325,12 +330,14 @@ static void tx_task(void *arg)
 
     bool first_rx = true;
 
+    int frame_count = 0;
+
 
     int query_count = 0;
 
     // ---------- 1) Send QUERY frames until success ----------
     ESP_LOGI("TX_TASK", "Sending query frames...");
-    int qry_frame_len = build_frame('Q', buffer, 1024, frame_buf, sizeof(frame_buf));
+    int qry_frame_len = build_frame('Q', buffer, 0, frame_buf, sizeof(frame_buf));
     int flag = 0;
     while (1) {
         int written = uart_write_bytes(TX_UART_PORT, (const char *)frame_buf, qry_frame_len);
@@ -339,12 +346,14 @@ static void tx_task(void *arg)
             query_count++;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(200));
+  
 
         if (xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL) {
             ESP_LOGI("TX_TASK", "Received SUCCESS, starting payload transfer");
             tx_ready = true;
+            vTaskDelay(pdMS_TO_TICKS(200));
             uart_start_time = esp_timer_get_time();
+            
             break;
         }
     }
@@ -357,13 +366,15 @@ static void tx_task(void *arg)
         // read_count++;
 
         if (read > 0) {
-            if(first_rx == true || (xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL) )
+            if(xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL) 
         {   
              int frame_len = build_frame('A', buffer, 1024, frame_buf, sizeof(frame_buf));
             if (frame_len < 0) {
                 ESP_LOGE("TX_TASK", "Frame buffer too small");
                 continue;
             }
+
+
             first_rx = false;
             int written = uart_write_bytes(TX_UART_PORT, (const char *)frame_buf, frame_len);
 
@@ -382,6 +393,15 @@ static void tx_task(void *arg)
                 printf("val of count %d\n",count);
                 ESP_LOGI("TX_TASK", "Sent %d bytes (payload=%d)", written, read);
             }
+
+    //               if(frame_count<5){
+    //                 printf("UART_TX:  %d bytes: ", written);
+    //         for (int i = 0; i < written; i++) {
+    //             printf("%02X ", frame_buf[i]);
+    //         }
+    //         printf("\n");
+    //     frame_count++;
+    // }
         }
         } 
         else if (read == RB_DONE) {
@@ -390,7 +410,7 @@ static void tx_task(void *arg)
             ESP_LOGI("TX_TASK", "UART finished in %.2f sec",
                      (uart_end_time - uart_start_time) / 1000000.0);
                 
-            int end_frame_len = build_frame('E', buffer, 1024, frame_buf, sizeof(frame_buf));
+            int end_frame_len = build_frame('E', buffer, 0, frame_buf, sizeof(frame_buf));
 
             int end_write = uart_write_bytes(TX_UART_PORT,(const char *)frame_buf, end_frame_len);
             if(end_write > 0){
