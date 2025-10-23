@@ -139,8 +139,6 @@ static void wifi_init_sta(void)
 void http_task(void *pvParameters)
 {
 
-    // int full_count = 0;
-    int http_count = 0;
     esp_http_client_config_t config = {
         .url = "https://gitlab.com/divyesh.vartha/cheap-host/-/raw/main/opus/small_harry.ogg?ref_type=heads&inline=false",
         .crt_bundle_attach = esp_crt_bundle_attach,
@@ -180,15 +178,10 @@ void http_task(void *pvParameters)
             do {
                    if(rb_is_full(rb)){
                     vTaskDelay(pdMS_TO_TICKS(100));
-                    // full_count++;
                 }
 
                 written = rb_write(rb, (char *)buffer, data_read, portMAX_DELAY);
-                
-                if(written>0){
-                    http_count++;
-                    printf("HTTP COUNT IS %d\n", http_count);
-                }
+
             } while (written <= 0);
         }
     }
@@ -197,7 +190,6 @@ void http_task(void *pvParameters)
     ESP_LOGI("HTTP_TASK", "HTTP transfer done in %.2f sec",
              (http_end_time - http_start_time) / 1000000.0);
 
-    // printf("full count was %d\n",full_count);
 
 
     esp_http_client_close(client);
@@ -228,16 +220,13 @@ static void uart_init(void)
     ESP_ERROR_CHECK(uart_set_pin(TX_UART_PORT, TX_UART_TX_PIN, TX_UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 }
 
-
-
-
 static int build_frame(uint8_t msg_type,
                        const uint8_t *payload,
                        int payload_len,
                        uint8_t *out_buf,
                        int out_buf_size)
 {
-    int frame_len = FRAME_HEADER_LEN + 2 /*length*/ + 1 /*msg_type*/ +
+    int frame_len = FRAME_HEADER_LEN + 1 /*msg_type*/ + 2 /*length*/ +
                     payload_len + FRAME_FOOTER_LEN;
 
     if (out_buf_size < frame_len) {
@@ -276,66 +265,14 @@ static int build_frame(uint8_t msg_type,
     return (p - out_buf); // total size
 }
 
-
-
-
-
-// void uart_check_send(void *arg) {
-//     uint8_t test_data[10] = {0x55, 0xAA, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
-
-//     while (1) {
-//     // Send 10 bytes
-//     int written = uart_write_bytes(UART_PORT, (const char *)test_data, sizeof(test_data));
-//     ESP_LOGI(TAG, "Sent %d bytes", written);
-//     vTaskDelay(pdMS_TO_TICKS(100));
-//     }
-//     // // Read any bytes received back
-//     // int len = uart_read_bytes(UART_PORT, rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(1000));
-//     // if (len > 0) {
-//     //     ESP_LOGI(TAG, "Received %d bytes", len);
-//     //     ESP_LOG_BUFFER_HEXDUMP(TAG, rx_buf, len, ESP_LOG_INFO);
-//     // } else {
-//     //     ESP_LOGI(TAG, "No response received");
-//     // }
-// }
-
-// void uart_check_rec(void *arg) {
-
-//     uint8_t rx_buf[1];
-
-//     while (1) {
-
-//     // Read any bytes received back
-//     int len = uart_read_bytes(UART_PORT, rx_buf, sizeof(rx_buf),portMAX_DELAY);
-//     if (len > 0) {
-//         ESP_LOGI(TAG, "Received %d bytes and val: %02X\n", len, rx_buf[0]);
-//         // ESP_LOGI(TAG, "Received Vals %02X %02X %02X\n",rx_buf[0], rx_buf[1], rx_buf[2]);
-//     } else {
-//         ESP_LOGI(TAG, "No response received");
-//     }
-// }
-
-// }
-
-
 static void tx_task(void *arg)
 {
     uint8_t buffer[BLOCK_SIZE];
     uint8_t frame_buf[BLOCK_SIZE + FRAME_HEADER_LEN + 2 + 1 + FRAME_FOOTER_LEN]; // header+len+type+payload+footer
     int read;
     int count = 0;
-    int fail_count = 0;
 
-    // int read_count = 0;
-
-    bool first_rx = true;
-
-    int frame_count = 0;
-
-
-    int query_count = 0;
-
-    // ---------- 1) Send QUERY frames until success ----------
+    // ---------- Send QUERY frames until success ----------
     ESP_LOGI("TX_TASK", "Sending query frames...");
     int qry_frame_len = build_frame('Q', buffer, 0, frame_buf, sizeof(frame_buf));
     int flag = 0;
@@ -343,7 +280,6 @@ static void tx_task(void *arg)
         int written = uart_write_bytes(TX_UART_PORT, (const char *)frame_buf, qry_frame_len);
         if (written > 0) {
             ESP_LOGI("TX_TASK", "Sent QUERY frame (%d bytes)", written);
-            query_count++;
         }
 
   
@@ -358,12 +294,11 @@ static void tx_task(void *arg)
         }
     }
 
-    // ---------- 2) Send real payload from ring buffer ----------
+    // ---------- Send real payload from ring buffer ----------
     while (1) {
 
         read = rb_read(rb, (char *)buffer, sizeof(buffer), portMAX_DELAY);
 
-        // read_count++;
 
         if (read > 0) {
             if(xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL) 
@@ -374,17 +309,7 @@ static void tx_task(void *arg)
                 continue;
             }
 
-
-            first_rx = false;
             int written = uart_write_bytes(TX_UART_PORT, (const char *)frame_buf, frame_len);
-
-
-                    // printf("Sent %d bytes: ", written);
-                    //     for (int i = 0; i < written; i++) {
-                    //         printf("%02X ", frame_buf[i]);
-                    //     }
-                    //     printf("\n");
-
 
             if (written < 0) {
                 ESP_LOGE("TX_TASK", "uart_write_bytes failed");
@@ -394,14 +319,6 @@ static void tx_task(void *arg)
                 ESP_LOGI("TX_TASK", "Sent %d bytes (payload=%d)", written, read);
             }
 
-    //               if(frame_count<5){
-    //                 printf("UART_TX:  %d bytes: ", written);
-    //         for (int i = 0; i < written; i++) {
-    //             printf("%02X ", frame_buf[i]);
-    //         }
-    //         printf("\n");
-    //     frame_count++;
-    // }
         }
         } 
         else if (read == RB_DONE) {
@@ -417,7 +334,6 @@ static void tx_task(void *arg)
                 ESP_LOGI(TAG, "Sent End Frame");
             }
 
-            // printf("read count was %d\n",read_count);
             //break on receiving success flag
             if(xQueueReceive(success_queue, &flag, portMAX_DELAY) == pdTRUE && flag == SUCCESS_VAL)
             {
@@ -432,8 +348,6 @@ static void tx_task(void *arg)
             ESP_LOGW("TX_TASK", "RB read error %d", read);
         }
     }
-
-    // printf("QUERY COUNT IS %d\n",query_count);
 
     ESP_LOGI("TX_TASK", "tx_task finished");
     vTaskDelete(NULL);
@@ -467,7 +381,7 @@ void rx_task(void *arg)
 
 void app_main(void) {
 
-    ESP_LOGI(TAG, "Starting example");
+    ESP_LOGI(TAG, "Starting ESP UART");
 
     esp_err_t ret = nvs_flash_init();
     
@@ -492,10 +406,6 @@ if (success_queue == NULL) {
 }
 
     uart_init();
-
-    // xTaskCreate(uart_check_send, "uart_check_send", 4096, NULL, 10, NULL);
-
-    // xTaskCreate(uart_check_rec, "uart_check_rec", 4096, NULL, 10, NULL);
 
     xTaskCreate(http_task, "http_task", 8192, NULL, 10, NULL);
     xTaskCreate(tx_task, "tx_task", 8192, NULL, 10, NULL);
